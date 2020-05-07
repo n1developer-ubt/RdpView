@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -18,25 +18,33 @@ using CefSharp.WinForms;
 namespace RdpView
 {
     [PermissionSet(SecurityAction.Demand, Name = "FullTrust")]
-    [System.Runtime.InteropServices.ComVisibleAttribute(true)]
+    [System.Runtime.InteropServices.ComVisible(true)]
     public partial class MainWindow : Form
     {
         private ChromiumWebBrowser _browser;
         public MainWindow()
         {
-            //MessageBox.Show(GetPublicIPAddress());
             InitializeComponent();
-            Client.f = this;
-            CheckForIllegalCrossThreadCalls = false; 
-            LoadBrowser();
+            CheckForIllegalCrossThreadCalls = false;
+            WindowState = FormWindowState.Maximized;
+            try
+            {
+                LoadBrowser();
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
         }
 
 
         private void LoadBrowser()
         {
-            CefSettings settings = new CefSettings();
-            settings.CachePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\CEF";
-            Clipboard.SetText(settings.CachePath);
+            CefSettings settings = new CefSettings
+            {
+                CachePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\CEF"
+            };
+            //Clipboard.SetText(settings.CachePath);
             CefSharp.Cef.Initialize(settings);
             CefSharpSettings.LegacyJavascriptBindingEnabled = true;
             //_browser = new ChromiumWebBrowser("https://api.raindroprdp.com/windows_login.html");
@@ -48,9 +56,6 @@ namespace RdpView
              this.Controls.Add(_browser);
         }
 
-        private string d = "<script>" +
-                           "var local_ip = null;window.local_ip = client.get_ip();" +
-"</script>";
         private void BrowserOnConsoleMessage(object sender, ConsoleMessageEventArgs e)
         {
             Console.Write(e.Message);
@@ -59,11 +64,10 @@ namespace RdpView
 
         public class Client
         {
-            public static Form f;
             public string get_ip()
             {
                 Console.WriteLine("Get_IP Called!");
-                return GetPublicIPAddress();
+                return GetPublicIpAddress();
             }
 
             public void set(string s)
@@ -73,12 +77,44 @@ namespace RdpView
 
             public void start_rdp(string ip, string username, string password)
             {
+                string cmd = $"\"{Application.StartupPath}\\freerdp\\wfreerdp.exe\" /f /cert-ignore /u:{username} /p:{password} /v:{ip} /admin /multimon";
+                Console.Write($"\n\n\n{cmd}\n\n\n");
                 System.Console.WriteLine($"IP: {ip}\nUsername: {username}\nPassword: {password}");
-                MessageBox.Show(ip + "\n" + password, username);
+                ExecuteCommand(cmd);
+                //File.WriteAllText(Path.Combine(Path.GetTempPath(), Path.GetTempFileName()),cmd);
+            }
+
+            static void ExecuteCommand(string command)
+            {
+                var processInfo = new ProcessStartInfo("cmd.exe", "/c " + command)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                };
+
+                var process = Process.Start(processInfo);
+
+                process.OutputDataReceived += (object sender, DataReceivedEventArgs e) =>
+                    Console.WriteLine("output>>" + e.Data);
+                process.BeginOutputReadLine();
+
+                process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs args)
+                {
+                    MessageBox.Show(args.Data);
+                    //Console.WriteLine("error>>" + );
+                };
+                process.BeginErrorReadLine();
+
+                process.WaitForExit();
+
+                Console.WriteLine("ExitCode: {0}", process.ExitCode);
+                process.Close();
             }
         }
 
-        public static string GetPublicIPAddress()
+        public static string GetPublicIpAddress()
         {
             var ipAddress = "";
 
